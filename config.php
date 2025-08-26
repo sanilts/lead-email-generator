@@ -1,47 +1,47 @@
 <?php
 /**
- * Configuration file for Lead Email Generator
- * Simplified version - Gemini 2.5 Flash only
+ * Lead Email Generator - Configuration
+ * Simplified version using only Gemini 2.5 Flash
  */
 
-// Check if session is already started
+// Session Configuration - MUST BE FIRST
 if (session_status() === PHP_SESSION_NONE) {
-    // Session Configuration
-    ini_set('session.gc_maxlifetime', 3600);
-    session_set_cookie_params(3600);
+    // Set session parameters
+    ini_set('session.use_cookies', 1);
+    ini_set('session.use_only_cookies', 1);
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.gc_maxlifetime', 7200); // 2 hours
+    
+    // Start session
     session_start();
 }
 
-// API Configuration - ONLY GEMINI
-define('GEMINI_API_KEY', 'AIzaSyBQ6KQPa8Ayw6rAy9h6aO5C2iF5fvJv6tw'); // Required
+// Gemini API Configuration
+define('GEMINI_API_KEY', 'AIzaSyBQ6KQPa8Ayw6rAy9h6aO5C2iF5fvJv6tw'); // Replace with your API key
 
-// Rate Limiting Settings
-define('API_RATE_LIMIT_DELAY', 500000); // Microseconds between API calls (0.5 seconds)
-define('MAX_BATCH_SIZE', 50); // Maximum companies to search at once
+// API Endpoint - Try these in order if one doesn't work:
+// 1. gemini-1.5-flash (most stable)
+define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent');
 
-// Cache Settings
-define('ENABLE_CACHE', true); // Enable/disable caching
-define('CACHE_EXPIRY_HOURS', 24); // How long to cache API results
+// Alternative endpoints to try if above doesn't work:
+// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent');
+// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent');
+// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent');
 
-// Upload Settings
+// Directory Configuration
+define('UPLOAD_DIR', __DIR__ . '/uploads/');
+define('TEMP_DIR', __DIR__ . '/temp/');
+define('LOG_DIR', __DIR__ . '/logs/');
+
+// Settings
+define('API_RATE_LIMIT', 500000); // Microseconds between API calls (0.5 seconds)
 define('MAX_FILE_SIZE', 10485760); // 10MB
-define('UPLOAD_DIR', 'uploads/');
-define('ALLOWED_EXTENSIONS', ['csv', 'txt']);
-
-// Email Format Detection Preferences
-define('DEFAULT_EMAIL_FORMAT', 'firstname.lastname');
-
-// Logging
 define('ENABLE_LOGGING', true);
-define('LOG_FILE', 'logs/api_calls.log');
 
-// Security
-define('ENABLE_CSRF_PROTECTION', false); // Disabled to prevent session issues
-
-// API Endpoint for Gemini
-define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent');
-
-// Error Reporting
+// PHP Configuration
+ini_set('max_execution_time', 300);
+ini_set('max_input_time', 300);
+ini_set('memory_limit', '256M');
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 
@@ -49,26 +49,29 @@ ini_set('display_errors', 1);
 date_default_timezone_set('UTC');
 
 // Create necessary directories
-if (!file_exists(UPLOAD_DIR)) {
-    mkdir(UPLOAD_DIR, 0777, true);
+$directories = [UPLOAD_DIR, TEMP_DIR, LOG_DIR];
+foreach ($directories as $dir) {
+    if (!file_exists($dir)) {
+        @mkdir($dir, 0777, true);
+        // Add .htaccess for security
+        @file_put_contents($dir . '/.htaccess', "Deny from all\n");
+    }
 }
 
-if (ENABLE_LOGGING && !file_exists(dirname(LOG_FILE))) {
-    mkdir(dirname(LOG_FILE), 0777, true);
+// Clean old temp files (older than 2 hours)
+function cleanOldFiles() {
+    if (is_dir(TEMP_DIR)) {
+        $files = glob(TEMP_DIR . '*.json');
+        foreach ($files as $file) {
+            if (filemtime($file) < time() - 7200) {
+                @unlink($file);
+            }
+        }
+    }
 }
 
-// Helper function for logging
-function logAPICall($company, $result) {
-    if (!ENABLE_LOGGING) return;
-    
-    $logEntry = date('Y-m-d H:i:s') . " | Gemini | $company | " . 
-                ($result ? 'SUCCESS' : 'FAILED') . "\n";
-    
-    file_put_contents(LOG_FILE, $logEntry, FILE_APPEND);
-}
-
-// Helper function for rate limiting
-function enforceRateLimit() {
-    usleep(API_RATE_LIMIT_DELAY);
+// Run cleanup occasionally
+if (rand(1, 20) == 1) {
+    cleanOldFiles();
 }
 ?>
