@@ -1,0 +1,17 @@
+
+# Enable PHP sessions
+php_flag session.auto_start on
+
+# Set upload limits
+php_value upload_max_filesize 10M
+php_value post_max_size 10M
+php_value max_execution_time 300
+php_value max_input_time 300
+
+# Security headers
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "DENY"
+Header set X-XSS-Protection "1; mode=block"
+
+# Prevent directory listing
+Options -Indexes
