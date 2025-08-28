@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Connection Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .test-section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+        
+        .status {
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 10px 5px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.4);
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid #dee2e6;
+        }
+        
+        .key-display {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+        
+        .key-display label {
+            min-width: 150px;
+            font-weight: 600;
+        }
+        
+        .key-display input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .instructions {
+            background: #e8f4f8;
+            border-left: 4px solid #00d2ff;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #0c5460;
+        }
+        
+        .instructions ol {
+            margin: 10px 0 0 20px;
+        }
+        
+        .instructions li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 API Connection Debugger</h1>
+        
+        <div class="instructions">
+            <h3>📋 Quick Setup Instructions</h3>
+            <ol>
+                <li>Make sure you have saved the debug version as <strong>process.php</strong></li>
+                <li>Check that your <strong>config.php</strong> file exists and has correct API keys</li>
+                <li>Click "Run Full Diagnostic" below to test everything</li>
+                <li>Review the results to identify any issues</li>
+            </ol>
+        </div>
+        
+        <div style="text-align: center; margin: 20px 0;">
+            <button onclick="runFullTest()" id="fullTestBtn">🚀 Run Full Diagnostic</button>
+            <button onclick="testGemini()" id="geminiBtn">🤖 Test Gemini Only</button>
+            <button onclick="testMillionVerifier()" id="mvBtn">✉️ Test MillionVerifier Only</button>
+            <button onclick="checkConfig()" id="configBtn">⚙️ Check Config</button>
+        </div>
+        
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p>Running diagnostic tests...</p>
+        </div>
+        
+        <!-- PHP & Server Info -->
+        <div class="test-section" id="serverInfo" style="display:none;">
+            <h2>🖥️ Server Information</h2>
+            <div id="serverResults"></div>
+        </div>
+        
+        <!-- Gemini Test Results -->
+        <div class="test-section" id="geminiSection" style="display:none;">
+            <h2>🤖 Gemini API Test</h2>
+            <div id="geminiResults"></div>
+        </div>
+        
+        <!-- MillionVerifier Test Results -->
+        <div class="test-section" id="mvSection" style="display:none;">
+            <h2>✉️ MillionVerifier API Test</h2>
+            <div id="mvResults"></div>
+        </div>
+        
+        <!-- Directory Check -->
+        <div class="test-section" id="dirSection" style="display:none;">
+            <h2>📁 Directory Permissions</h2>
+            <div id="dirResults"></div>
+        </div>
+        
+        <!-- Raw Response -->
+        <div class="test-section" id="rawSection" style="display:none;">
+            <h2>📝 Raw Response Data</h2>
+            <pre id="rawResponse"></pre>
+        </div>
+    </div>
+
+    <script>
+        function showLoader(show) {
+            document.getElementById('loader').style.display = show ? 'block' : 'none';
+        }
+        
+        function disableButtons(disable) {
+            document.querySelectorAll('button').forEach(btn => {
+                btn.disabled = disable;
+            });
+        }
+        
+        async function runFullTest() {
+            showLoader(true);
+            disableButtons(true);
+            
+            try {
+                const response = await fetch('process.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'action=debug_api'
+                });
+                
+                const text = await response.text();
+                
+                // Try to parse as JSON
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    // Not JSON, show raw response
+                    document.getElementById('rawSection').style.display = 'block';
+                    document.getElementById('rawResponse').textContent = text;
+                    
+                    // Check for common errors
+                    if (text.includes('Fatal error') || text.includes('Parse error')) {
+                        alert('PHP Error detected! Check the Raw Response section for details.');
+                    } else if (text.includes('404') || text === '') {
+                        alert('process.php file not found or empty response!');
+                    }
+                    
+                    showLoader(false);
+                    disableButtons(false);
+                    return;
+                }
+                
+                displayResults(data);
+                
+            } catch (error) {
+                document.getElementById('rawSection').style.display = 'block';
+                document.getElementById('rawResponse').textContent = 'Fetch Error: ' + error.message + '\n\n' +
+                    'This usually means:\n' +
+                    '1. process.php file is not found\n' +
+                    '2. PHP is not running on your server\n' +
+                    '3. There is a syntax error in the PHP file';
+            }
+            
+            showLoader(false);
+            disableButtons(false);
+        }
+        
+        function displayResults(data) {
+            // Show all sections
+            document.getElementById('serverInfo').style.display = 'block';
+            document.getElementById('geminiSection').style.display = 'block';
+            document.getElementById('mvSection').style.display = 'block';
+            document.getElementById('dirSection').style.display = 'block';
+            document.getElementById('rawSection').style.display = 'block';
+            
+            // Server Info
+            let serverHtml = '';
+            serverHtml += `<div class="status info">PHP Version: ${data.php_version || 'Unknown'}</div>`;
+            serverHtml += `<div class="status ${data.curl_enabled ? 'success' : 'error'}">cURL: ${data.curl_enabled ? 'Enabled ✓' : 'Disabled ✗'}</div>`;
+            serverHtml += `<div class="status info">Session ID: ${data.session_id || 'Not available'}</div>`;
+            serverHtml += `<div class="status ${data.config_exists ? 'success' : 'error'}">Config File: ${data.config_exists ? 'Found ✓' : 'Not Found ✗'}</div>`;
+            document.getElementById('serverResults').innerHTML = serverHtml;
+            
+            // Gemini Results
+            if (data.gemini) {
+                let geminiHtml = '';
+                geminiHtml += `<div class="status ${data.gemini.configured ? 'success' : 'warning'}">Configuration: ${data.gemini.configured ? 'API Key Set ✓' : 'No API Key ✗'}</div>`;
+                
+                if (data.gemini.configured) {
+                    geminiHtml += `<div class="status info">Key Length: ${data.gemini.key_length} chars</div>`;
+                    geminiHtml += `<div class="status info">Key Preview: ${data.gemini.key_preview}</div>`;
+                    geminiHtml += `<div class="status ${data.gemini.working ? 'success' : 'error'}">Connection: ${data.gemini.working ? 'Working ✓' : 'Failed ✗'}</div>`;
+                    
+                    if (data.gemini.error) {
+                        geminiHtml += `<div class="status error">Error: ${data.gemini.error}</div>`;
+                    }
+                    
+                    if (data.gemini.curl_info) {
+                        geminiHtml += `<div class="status info">HTTP Code: ${data.gemini.curl_info.http_code}</div>`;
+                    }
+                    
+                    if (data.gemini.response && !data.gemini.working) {
+                        geminiHtml += `<div class="status warning">Response: ${data.gemini.response}</div>`;
+                    }
+                }
+                
+                document.getElementById('geminiResults').innerHTML = geminiHtml;
+            }
+            
+            // MillionVerifier Results
+            if (data.millionverifier) {
+                let mvHtml = '';
+                mvHtml += `<div class="status ${data.millionverifier.configured ? 'success' : 'warning'}">Configuration: ${data.millionverifier.configured ? 'API Key Set ✓' : 'No API Key ✗'}</div>`;
+                
+                if (data.millionverifier.configured) {
+                    mvHtml += `<div class="status info">Key Length: ${data.millionverifier.key_length} chars</div>`;
+                    mvHtml += `<div class="status info">Key Preview: ${data.millionverifier.key_preview}</div>`;
+                    mvHtml += `<div class="status ${data.millionverifier.working ? 'success' : 'error'}">Connection: ${data.millionverifier.working ? 'Working ✓' : 'Failed ✗'}</div>`;
+                    
+                    if (data.millionverifier.working) {
+                        mvHtml += `<div class="status success">Credits Available: ${data.millionverifier.credits}</div>`;
+                    }
+                    
+                    if (data.millionverifier.error) {
+                        mvHtml += `<div class="status error">Error: ${data.millionverifier.error}</div>`;
+                    }
+                }
+                
+                document.getElementById('mvResults').innerHTML = mvHtml;
+            }
+            
+            // Directory Check
+            if (data.directories) {
+                let dirHtml = '';
+                for (let [dir, status] of Object.entries(data.directories)) {
+                    dirHtml += `<div class="status ${status ? 'success' : 'error'}">${dir}: ${status ? 'OK ✓' : 'Missing or Not Writable ✗'}</div>`;
+                }
+                document.getElementById('dirResults').innerHTML = dirHtml;
+            }
+            
+            // Raw response
+            document.getElementById('rawResponse').textContent = JSON.stringify(data, null, 2);
+        }
+        
+        async function testGemini() {
+            showLoader(true);
+            disableButtons(true);
+            
+            try {
+                const response = await fetch('process.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: 'action=search_online&company=Google'
+                });
+                
+                const data = await response.json();
+                
+                document.getElementById('geminiSection').style.display = 'block';
+                
+                if (data.success) {
+                    document.getElementById('geminiResults').innerHTML = `
+                        <div class="status success">✓ API is working!</div>
+                        <div class="status info">Test Company: Google</div>
+                        <div class="status info">Domain Found: ${data.domain}</div>
+                        <div class="status info">Format: ${data.format}</div>
+                        <div class="status info">Confidence: ${data.confidence}%</div>
+                    `;
+                } else {
+                    document.getElementById('geminiResults').innerHTML = `
+                        <div class="status error">✗ API test failed: ${data.error || 'Unknown error'}</div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('geminiSection').style.display = 'block';
+                document.getElementById('geminiResults').innerHTML = `
+                    <div class="status error">✗ Connection error: ${error.message}</div>
+                `;
+            }
+            
+            showLoader(false);
+            disableButtons(false);
+        }
+        
+        async function testMillionVerifier() {
+            alert('MillionVerifier test will be available once you add the API key to config.php');
+        }
+        
+        async function checkConfig() {
+            window.open('process.php', '_blank');
+        }
+        
+        // Auto-run test on load
+        window.addEventListener('load', () => {
+            setTimeout(runFullTest, 500);
+        });
+    </script>
+</body>
+</html>

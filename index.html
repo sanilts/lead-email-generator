@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lead Email Generator - AI-Powered with Gemini</title>
+    <title>Lead Email Generator - AI-Powered with Email Verification</title>
     <style>
         * {
             margin: 0;
@@ -45,11 +45,17 @@
             font-size: 1.1rem;
         }
         
+        .api-status-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
         .api-status {
             background: rgba(255,255,255,0.15);
             border-radius: 10px;
             padding: 10px 20px;
-            margin-top: 20px;
             display: inline-block;
         }
         
@@ -65,6 +71,14 @@
         .api-status.active .indicator {
             background: #44ff44;
             animation: pulse 2s infinite;
+        }
+        
+        .credits-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-left: 10px;
         }
         
         @keyframes pulse {
@@ -441,10 +455,17 @@
     <div class="container">
         <div class="header">
             <h1>🚀 Lead Email Generator</h1>
-            <p>AI-Powered Domain & Email Discovery with Gemini 2.5 Flash</p>
-            <div class="api-status" id="apiStatus">
-                <span class="indicator"></span>
-                <span id="apiText">Checking API...</span>
+            <p>AI-Powered Domain & Email Discovery with Gemini</p>
+            <div class="api-status-container">
+                <div class="api-status" id="geminiStatus">
+                    <span class="indicator"></span>
+                    <span id="geminiText">Checking Gemini...</span>
+                </div>
+                <div class="api-status" id="mvStatus">
+                    <span class="indicator"></span>
+                    <span id="mvText">Checking MillionVerifier...</span>
+                    <span class="credits-badge" id="creditsCount" style="display:none;">0 credits</span>
+                </div>
             </div>
         </div>
         
@@ -553,35 +574,56 @@
         let selectedCompanies = new Set();
         let searchedCount = 0;
         
-        // Check API status
+        // Check API status - FIXED VERSION
         async function checkAPI() {
             try {
                 const response = await fetch('process.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: 'action=check_api'
+                    body: 'action=debug_api'  // Using debug_api action that works
                 });
                 
                 if (response.ok) {
                     const data = await response.json();
-                    const status = document.getElementById('apiStatus');
-                    const text = document.getElementById('apiText');
                     
-                    if (data.api_available) {
-                        status.classList.add('active');
-                        text.textContent = 'Gemini AI Connected';
-                    } else if (data.error) {
-                        text.textContent = 'API Error: ' + (data.http_code || data.error);
-                        console.error('API Error Details:', data);
+                    // Update Gemini status
+                    const geminiStatus = document.getElementById('geminiStatus');
+                    const geminiText = document.getElementById('geminiText');
+                    
+                    if (data.gemini && data.gemini.working) {
+                        geminiStatus.classList.add('active');
+                        geminiText.textContent = 'Gemini AI Connected';
+                    } else if (data.gemini && data.gemini.configured) {
+                        geminiText.textContent = 'Gemini API Error';
                     } else {
-                        text.textContent = 'Gemini API Not Configured';
+                        geminiText.textContent = 'Gemini Not Configured';
+                    }
+                    
+                    // Update MillionVerifier status
+                    const mvStatus = document.getElementById('mvStatus');
+                    const mvText = document.getElementById('mvText');
+                    const creditsCount = document.getElementById('creditsCount');
+                    
+                    if (data.millionverifier && data.millionverifier.working) {
+                        mvStatus.classList.add('active');
+                        mvText.textContent = 'MillionVerifier Connected';
+                        if (data.millionverifier.credits > 0) {
+                            creditsCount.style.display = 'inline-block';
+                            creditsCount.textContent = data.millionverifier.credits + ' credits';
+                        }
+                    } else if (data.millionverifier && data.millionverifier.configured) {
+                        mvText.textContent = 'MillionVerifier Error';
+                    } else {
+                        mvText.textContent = 'MillionVerifier Not Setup';
                     }
                 } else {
-                    document.getElementById('apiText').textContent = 'Server Error (' + response.status + ')';
+                    document.getElementById('geminiText').textContent = 'Connection Error';
+                    document.getElementById('mvText').textContent = 'Connection Error';
                 }
             } catch (error) {
-                document.getElementById('apiText').textContent = 'Connection Failed';
                 console.error('API Check Error:', error);
+                document.getElementById('geminiText').textContent = 'Check Failed';
+                document.getElementById('mvText').textContent = 'Check Failed';
             }
         }
         
@@ -649,10 +691,15 @@
                         notify('CSV uploaded successfully!', 'success');
                         displayStats(data.stats);
                         displayCompanies(data.companies);
+                    } else {
+                        notify('Upload failed: ' + (data.error || 'Unknown error'), 'error');
                     }
+                } else {
+                    notify('Server error during upload', 'error');
                 }
             } catch (error) {
                 notify('Upload failed: ' + error.message, 'error');
+                console.error('Upload error:', error);
             }
         }
         
@@ -790,10 +837,17 @@
                         
                         searchedCount++;
                         document.getElementById('searchCount').textContent = searchedCount;
+                        
+                        notify(`Found domain for ${companies[index]}`, 'success');
+                    } else {
+                        notify('Search failed for ' + companies[index], 'error');
                     }
+                } else {
+                    notify('Search request failed', 'error');
                 }
             } catch (error) {
-                notify('Search failed', 'error');
+                notify('Search error: ' + error.message, 'error');
+                console.error('Search error:', error);
             } finally {
                 card.classList.remove('searching');
                 btn.disabled = false;
@@ -864,10 +918,15 @@
                         displayPreview(data.preview, data.total);
                         document.getElementById('emailsGenerated').textContent = data.stats.emails_generated;
                         notify(`Generated ${data.stats.emails_generated} emails!`, 'success');
+                    } else {
+                        notify('Generation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
+                } else {
+                    notify('Server error during generation', 'error');
                 }
             } catch (error) {
                 notify('Generation failed: ' + error.message, 'error');
+                console.error('Generation error:', error);
             } finally {
                 document.getElementById('loader').style.display = 'none';
             }
@@ -920,6 +979,8 @@
                     } else {
                         notify('No data available. Please generate emails first.', 'error');
                     }
+                } else {
+                    notify('Download check failed', 'error');
                 }
             } catch (error) {
                 notify('Download failed. Trying direct download...', 'warning');

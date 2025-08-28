@@ -1,7 +1,7 @@
 <?php
 /**
  * Lead Email Generator - Configuration
- * Simplified version using only Gemini 2.5 Flash
+ * Enhanced with MillionVerifier Email Verification
  */
 
 // Session Configuration - MUST BE FIRST
@@ -19,14 +19,13 @@ if (session_status() === PHP_SESSION_NONE) {
 // Gemini API Configuration
 define('GEMINI_API_KEY', 'AIzaSyBQ6KQPa8Ayw6rAy9h6aO5C2iF5fvJv6tw'); // Replace with your API key
 
+// MillionVerifier API Configuration
+define('MILLIONVERIFIER_API_KEY', 'iBzb7edLwBQtl30OMmxZEVH6g'); // Replace with your MillionVerifier API key
+define('MILLIONVERIFIER_API_ENDPOINT', 'https://api.millionverifier.com/api/v3/');
+
 // API Endpoint - Try these in order if one doesn't work:
 // 1. gemini-1.5-flash (most stable)
 define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent');
-
-// Alternative endpoints to try if above doesn't work:
-// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent');
-// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent');
-// define('GEMINI_API_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent');
 
 // Directory Configuration
 define('UPLOAD_DIR', __DIR__ . '/uploads/');
@@ -37,6 +36,8 @@ define('LOG_DIR', __DIR__ . '/logs/');
 define('API_RATE_LIMIT', 500000); // Microseconds between API calls (0.5 seconds)
 define('MAX_FILE_SIZE', 10485760); // 10MB
 define('ENABLE_LOGGING', true);
+define('ENABLE_EMAIL_VERIFICATION', true); // Toggle email verification
+define('VERIFICATION_BATCH_SIZE', 50); // Process emails in batches
 
 // PHP Configuration
 ini_set('max_execution_time', 300);
