@@ -180,6 +180,10 @@
             font-size: 0.95rem;
         }
         
+        .stat-card.verified {
+            background: linear-gradient(135deg, #00d084 0%, #00a046 100%);
+        }
+        
         .companies-section {
             display: none;
         }
@@ -357,6 +361,20 @@
             transition: width 0.5s ease;
         }
         
+        .verification-progress {
+            display: none;
+            background: linear-gradient(135deg, #00d084 0%, #00a046 100%);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            color: white;
+            text-align: center;
+        }
+        
+        .verification-progress h3 {
+            margin-bottom: 10px;
+        }
+        
         .preview-section {
             display: none;
         }
@@ -382,6 +400,17 @@
         
         .preview-table tr:hover {
             background: #f8f9fa;
+        }
+        
+        .verification-cell {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .verification-icon {
+            width: 16px;
+            height: 16px;
         }
         
         .generate-section {
@@ -447,6 +476,45 @@
         .notification.info {
             border-left: 4px solid #00d2ff;
         }
+        
+        .verification-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 25px;
+            margin-left: auto;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 25px;
+            background: #ccc;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .toggle-switch.active {
+            background: #00d084;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 21px;
+            height: 21px;
+            background: white;
+            border-radius: 50%;
+            transition: all 0.3s;
+        }
+        
+        .toggle-switch.active .toggle-slider {
+            left: 27px;
+        }
     </style>
 </head>
 <body>
@@ -455,7 +523,7 @@
     <div class="container">
         <div class="header">
             <h1>🚀 Lead Email Generator</h1>
-            <p>AI-Powered Domain & Email Discovery with Gemini</p>
+            <p>AI-Powered Domain Discovery & Email Verification</p>
             <div class="api-status-container">
                 <div class="api-status" id="geminiStatus">
                     <span class="indicator"></span>
@@ -499,9 +567,9 @@
                     <h3 id="emailsGenerated">0</h3>
                     <p>Emails Generated</p>
                 </div>
-                <div class="stat-card" style="background: linear-gradient(135deg, #00d2ff 0%, #3a47d5 100%);">
-                    <h3 id="searchCount">0</h3>
-                    <p>Domains Found</p>
+                <div class="stat-card verified">
+                    <h3 id="emailsVerified">0</h3>
+                    <p>Emails Verified</p>
                 </div>
             </div>
             
@@ -520,9 +588,12 @@
                     <button class="btn btn-success" onclick="selectAll()">✓ Select All</button>
                     <button class="btn btn-danger" onclick="deselectAll()">✗ Deselect All</button>
                     <button class="btn btn-info" onclick="searchAllOnline()">🌐 Search All with AI</button>
-                    <span style="margin-left: auto; color: #666;">
-                        <span id="selectedCount">0</span> companies selected
-                    </span>
+                    <div class="verification-toggle">
+                        <label style="font-weight: 600;">Verify Emails:</label>
+                        <div class="toggle-switch" id="verificationToggle" onclick="toggleVerification()">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
                 </div>
                 
                 <div class="company-grid" id="companyGrid"></div>
@@ -530,9 +601,20 @@
             
             <!-- Generate Button -->
             <div class="generate-section" id="generateSection">
+                <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+                    <strong>⚠️ Note:</strong> Email verification is currently <strong id="verificationStatus">DISABLED</strong> by default to save credits. 
+                    Use the toggle above to enable verification if needed.
+                </div>
                 <button class="btn btn-primary" style="font-size: 18px; padding: 15px 40px;" onclick="generateEmails()">
                     ✨ Generate Emails
                 </button>
+            </div>
+            
+            <!-- Verification Progress -->
+            <div class="verification-progress" id="verificationProgress">
+                <h3>🔍 Verifying Email Addresses...</h3>
+                <div class="spinner"></div>
+                <p id="verificationStatus">Processing batch verification...</p>
             </div>
             
             <!-- Preview Section -->
@@ -544,7 +626,7 @@
                 
                 <div class="loader" id="loader">
                     <div class="spinner"></div>
-                    <p style="margin-top: 15px; color: #666;">Generating emails...</p>
+                    <p style="margin-top: 15px; color: #666;" id="loaderText">Generating emails...</p>
                 </div>
                 
                 <table class="preview-table" id="previewTable" style="display: none;">
@@ -554,6 +636,7 @@
                             <th>Last Name</th>
                             <th>Company</th>
                             <th>Email</th>
+                            <th>Verification Status</th>
                         </tr>
                     </thead>
                     <tbody id="previewBody"></tbody>
@@ -561,7 +644,7 @@
                 
                 <div style="text-align: center; margin-top: 30px; display: none;" id="downloadSection">
                     <button class="btn btn-success" style="font-size: 18px; padding: 15px 40px;" onclick="downloadCSV()">
-                        📥 Download Enhanced CSV
+                        📥 Download Verified CSV Report
                     </button>
                 </div>
             </div>
@@ -573,14 +656,15 @@
         let companies = {};
         let selectedCompanies = new Set();
         let searchedCount = 0;
+        let verificationEnabled = false; // Start with verification disabled by default
         
-        // Check API status - FIXED VERSION
+        // Check API status
         async function checkAPI() {
             try {
                 const response = await fetch('process.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: 'action=debug_api'  // Using debug_api action that works
+                    body: 'action=debug_api'
                 });
                 
                 if (response.ok) {
@@ -611,8 +695,18 @@
                             creditsCount.style.display = 'inline-block';
                             creditsCount.textContent = data.millionverifier.credits + ' credits';
                         }
+                        
+                        // DON'T automatically enable verification even if API is working
+                        // Let user control it with the toggle
                     } else if (data.millionverifier && data.millionverifier.configured) {
                         mvText.textContent = 'MillionVerifier Error';
+                        // Log the error for debugging
+                        if (data.millionverifier.error) {
+                            console.error('MillionVerifier Error:', data.millionverifier.error);
+                        }
+                        if (data.millionverifier.raw_response) {
+                            console.log('MillionVerifier Response:', data.millionverifier.raw_response);
+                        }
                     } else {
                         mvText.textContent = 'MillionVerifier Not Setup';
                     }
@@ -629,6 +723,42 @@
         
         // Initialize
         checkAPI();
+        
+        // Toggle verification
+        function toggleVerification() {
+            const toggle = document.getElementById('verificationToggle');
+            const willBeEnabled = !toggle.classList.contains('active');
+            
+            // If enabling verification, warn about credit usage
+            if (willBeEnabled) {
+                const emailCount = document.getElementById('emailsGenerated').textContent || '0';
+                const estimatedEmails = parseInt(emailCount) || Object.keys(companies).length * 5; // Estimate
+                
+                if (estimatedEmails > 50) {
+                    const confirmMsg = `⚠️ WARNING: Email Verification will use MillionVerifier credits!\n\n` +
+                                     `Estimated emails to verify: ${estimatedEmails}\n` +
+                                     `Each email uses 1 credit.\n\n` +
+                                     `Are you sure you want to enable verification for ALL emails?`;
+                    
+                    if (!confirm(confirmMsg)) {
+                        return; // User cancelled
+                    }
+                }
+            }
+            
+            toggle.classList.toggle('active');
+            verificationEnabled = toggle.classList.contains('active');
+            
+            // Update status text
+            document.getElementById('verificationStatus').textContent = verificationEnabled ? 'ENABLED' : 'DISABLED';
+            document.getElementById('verificationStatus').style.color = verificationEnabled ? '#28a745' : '#856404';
+            
+            // Update button text
+            const generateBtn = document.querySelector('#generateSection button');
+            generateBtn.textContent = verificationEnabled ? '✨ Generate & Verify ALL Emails' : '✨ Generate Emails';
+            
+            notify(`Email verification ${verificationEnabled ? 'enabled' : 'disabled'}`, 'info');
+        }
         
         // Show notification
         function notify(message, type = 'info') {
@@ -744,6 +874,7 @@
                             <option value="firstname.lastname">firstname.lastname@</option>
                             <option value="firstname">firstname@</option>
                             <option value="f.lastname">f.lastname@</option>
+                            <option value="flastname">flastname@ (jsmith)</option>
                             <option value="firstname.l">firstname.l@</option>
                             <option value="firstnamelastname">firstnamelastname@</option>
                             <option value="lastname.firstname">lastname.firstname@</option>
@@ -783,7 +914,7 @@
         
         // Update selected count
         function updateSelectedCount() {
-            document.getElementById('selectedCount').textContent = selectedCompanies.size;
+            // Not showing selected count in this version
         }
         
         // Select all
@@ -836,7 +967,6 @@
                         status.innerHTML = `<span class="status-badge ${statusClass}">${data.confidence}% confidence</span>`;
                         
                         searchedCount++;
-                        document.getElementById('searchCount').textContent = searchedCount;
                         
                         notify(`Found domain for ${companies[index]}`, 'success');
                     } else {
@@ -903,13 +1033,19 @@
             
             document.getElementById('previewSection').style.display = 'block';
             document.getElementById('loader').style.display = 'block';
+            document.getElementById('loaderText').textContent = verificationEnabled ? 
+                'Generating and verifying emails...' : 'Generating emails...';
             document.getElementById('previewTable').style.display = 'none';
+            
+            if (verificationEnabled) {
+                document.getElementById('verificationProgress').style.display = 'block';
+            }
             
             try {
                 const response = await fetch('process.php', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: `action=generate&mappings=${encodeURIComponent(JSON.stringify(mappings))}&excluded=${encodeURIComponent(JSON.stringify(excluded))}`
+                    body: `action=generate&mappings=${encodeURIComponent(JSON.stringify(mappings))}&excluded=${encodeURIComponent(JSON.stringify(excluded))}&enable_verification=${verificationEnabled}`
                 });
                 
                 if (response.ok) {
@@ -917,7 +1053,14 @@
                     if (data.success) {
                         displayPreview(data.preview, data.total);
                         document.getElementById('emailsGenerated').textContent = data.stats.emails_generated;
-                        notify(`Generated ${data.stats.emails_generated} emails!`, 'success');
+                        if (data.stats.emails_verified !== undefined) {
+                            document.getElementById('emailsVerified').textContent = data.stats.emails_verified;
+                        }
+                        
+                        // Check browser console for any verification issues
+                        console.log('Generation complete:', data.stats);
+                        
+                        notify(`Generated ${data.stats.emails_generated} emails${data.stats.emails_verified ? ` and verified ${data.stats.emails_verified}` : ''}!`, 'success');
                     } else {
                         notify('Generation failed: ' + (data.error || 'Unknown error'), 'error');
                     }
@@ -929,6 +1072,7 @@
                 console.error('Generation error:', error);
             } finally {
                 document.getElementById('loader').style.display = 'none';
+                document.getElementById('verificationProgress').style.display = 'none';
             }
         }
         
@@ -939,11 +1083,33 @@
             
             preview.forEach(row => {
                 const tr = document.createElement('tr');
+                
+                // Determine verification status icon
+                let verificationIcon = '';
+                let verificationText = row.verification_status || 'Not Verified';
+                
+                if (row.verification_status === 'deliverable') {
+                    verificationIcon = '✅';
+                    verificationText = 'Deliverable';
+                } else if (row.verification_status === 'undeliverable') {
+                    verificationIcon = '❌';
+                    verificationText = 'Undeliverable';
+                } else if (row.verification_status === 'risky') {
+                    verificationIcon = '⚠️';
+                    verificationText = 'Risky';
+                } else if (row.verification_status === 'unknown') {
+                    verificationIcon = '❓';
+                    verificationText = 'Unknown';
+                } else {
+                    verificationIcon = '⏸';
+                }
+                
                 tr.innerHTML = `
                     <td>${row.firstName}</td>
                     <td>${row.lastName}</td>
                     <td>${row.company}</td>
                     <td>${row.email || '<em style="color: #999;">No email</em>'}</td>
+                    <td><div class="verification-cell">${verificationIcon} ${verificationText}</div></td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -951,7 +1117,7 @@
             if (total > preview.length) {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td colspan="4" style="text-align: center; font-style: italic; color: #666;">
+                    <td colspan="5" style="text-align: center; font-style: italic; color: #666;">
                         ... and ${total - preview.length} more rows
                     </td>
                 `;
@@ -975,7 +1141,7 @@
                     const data = await response.json();
                     if (data.download_ready) {
                         window.location.href = 'process.php?action=download';
-                        notify(`Downloading ${data.record_count} records...`, 'success');
+                        notify(`Downloading ${data.record_count} verified records...`, 'success');
                     } else {
                         notify('No data available. Please generate emails first.', 'error');
                     }

@@ -1,7 +1,7 @@
 <?php
 /**
- * Lead Email Generator - Debug Version
- * Enhanced error reporting to identify issues
+ * Lead Email Generator - Enhanced with Email Verification
+ * Includes MillionVerifier integration for email validation
  */
 
 // Enable detailed error reporting for debugging
@@ -23,10 +23,164 @@ class LeadProcessor {
     private $millionVerifierKey;
     private $csvData = [];
     private $companies = [];
+    private $verificationResults = [];
     
     public function __construct() {
         $this->geminiKey = GEMINI_API_KEY;
         $this->millionVerifierKey = defined('MILLIONVERIFIER_API_KEY') ? MILLIONVERIFIER_API_KEY : '';
+    }
+    
+    /**
+     * Verify emails using MillionVerifier API
+     */
+    public function verifyEmails($emails) {
+        if (!ENABLE_EMAIL_VERIFICATION || empty($this->millionVerifierKey)) {
+            return $this->generateDefaultVerificationResults($emails);
+        }
+        
+        $results = [];
+        $startTime = time();
+        $maxTime = 30; // Maximum 30 seconds for verification
+        
+        // Process emails one by one
+        foreach ($emails as $email) {
+            // Check timeout
+            if (time() - $startTime > $maxTime) {
+                // Fill remaining emails with default results
+                $results[$email] = [
+                    'status' => 'not_verified',
+                    'result' => 'timeout',
+                    'score' => null,
+                    'free_email' => null,
+                    'disposable' => null,
+                    'role' => null,
+                    'catch_all' => null,
+                    'reason' => 'Verification timeout',
+                    'verified_at' => null
+                ];
+                continue;
+            }
+            
+            $results[$email] = $this->verifySingleEmail($email);
+            usleep(200000); // 0.2 second delay between verifications
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Verify a batch of emails
+     */
+    private function verifyBatch($emails) {
+        $results = [];
+        
+        // For MillionVerifier, we'll use single verification for now
+        // as bulk requires file upload which is more complex
+        foreach ($emails as $email) {
+            $results[$email] = $this->verifySingleEmail($email);
+            usleep(100000); // 0.1 second delay between requests
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * Verify a single email
+     */
+    private function verifySingleEmail($email) {
+        // MillionVerifier single email verification endpoint
+        $url = 'https://api.millionverifier.com/api/v3/?api=' . $this->millionVerifierKey . '&email=' . urlencode($email);
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_HTTPHEADER => ['Accept: application/json']
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        if ($httpCode == 200 && $response) {
+            $data = json_decode($response, true);
+            return $this->parseVerificationResult($data);
+        }
+        
+        return [
+            'status' => 'unknown',
+            'result' => 'unknown',
+            'score' => 0,
+            'free_email' => false,
+            'disposable' => false,
+            'role' => false,
+            'catch_all' => false,
+            'error' => 'Verification failed'
+        ];
+    }
+    
+    /**
+     * Parse verification result into standardized format
+     */
+    private function parseVerificationResult($result) {
+        // Map MillionVerifier result to our format
+        $status = 'unknown';
+        if (isset($result['result'])) {
+            switch($result['result']) {
+                case 'deliverable':
+                case 'valid':
+                case 'ok':
+                    $status = 'deliverable';
+                    break;
+                case 'undeliverable':
+                case 'invalid':
+                case 'bad':
+                    $status = 'undeliverable';
+                    break;
+                case 'risky':
+                case 'catch-all':
+                case 'unknown':
+                    $status = 'risky';
+                    break;
+                default:
+                    $status = 'unknown';
+            }
+        }
+        
+        return [
+            'status' => $status,
+            'result' => $result['result'] ?? 'unknown',
+            'score' => $result['score'] ?? ($status === 'deliverable' ? 100 : 0),
+            'free_email' => isset($result['free']) ? $result['free'] : false,
+            'disposable' => isset($result['disposable']) ? $result['disposable'] : false,
+            'role' => isset($result['role']) ? $result['role'] : false,
+            'catch_all' => isset($result['catch_all']) ? $result['catch_all'] : false,
+            'reason' => $result['reason'] ?? '',
+            'verified_at' => date('Y-m-d H:i:s')
+        ];
+    }
+    
+    /**
+     * Generate default verification results when verification is disabled
+     */
+    private function generateDefaultVerificationResults($emails) {
+        $results = [];
+        foreach ($emails as $email) {
+            $results[$email] = [
+                'status' => 'not_verified',
+                'result' => 'not_verified',
+                'score' => null,
+                'free_email' => null,
+                'disposable' => null,
+                'role' => null,
+                'catch_all' => null,
+                'reason' => 'Verification not enabled',
+                'verified_at' => null
+            ];
+        }
+        return $results;
     }
     
     /**
@@ -111,7 +265,8 @@ class LeadProcessor {
             'credits' => 0,
             'key_length' => strlen($this->millionVerifierKey),
             'key_preview' => substr($this->millionVerifierKey, 0, 10) . '...',
-            'error' => null
+            'error' => null,
+            'raw_response' => null
         ];
         
         if (empty($this->millionVerifierKey) || $this->millionVerifierKey === 'YOUR_MILLIONVERIFIER_API_KEY') {
@@ -121,7 +276,7 @@ class LeadProcessor {
         
         $result['configured'] = true;
         
-        // Test with credits endpoint
+        // Test with credits endpoint - correct parameter name is 'api'
         $url = 'https://api.millionverifier.com/api/v3/credits?api=' . $this->millionVerifierKey;
         
         $ch = curl_init($url);
@@ -129,7 +284,8 @@ class LeadProcessor {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_TIMEOUT => 10
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_HTTPHEADER => ['Accept: application/json']
         ]);
         
         $response = curl_exec($ch);
@@ -144,15 +300,26 @@ class LeadProcessor {
             if (isset($data['credits'])) {
                 $result['working'] = true;
                 $result['credits'] = $data['credits'];
+            } elseif (isset($data['remaining_credits'])) {
+                // Alternative response format
+                $result['working'] = true;
+                $result['credits'] = $data['remaining_credits'];
             } else {
                 $result['error'] = 'Invalid response format';
+                $result['raw_response'] = substr($response, 0, 200);
             }
+        } elseif ($httpCode == 401 || $httpCode == 403) {
+            $result['error'] = 'Invalid API Key';
         } else {
             $result['error'] = 'HTTP Error: ' . $httpCode;
             if ($response) {
                 $decoded = json_decode($response, true);
-                if ($decoded) {
-                    $result['error'] .= ' - ' . json_encode($decoded);
+                if ($decoded && isset($decoded['error'])) {
+                    $result['error'] .= ' - ' . $decoded['error'];
+                } elseif ($decoded && isset($decoded['message'])) {
+                    $result['error'] .= ' - ' . $decoded['message'];
+                } else {
+                    $result['raw_response'] = substr($response, 0, 200);
                 }
             }
         }
@@ -174,10 +341,18 @@ class LeadProcessor {
 1. The official website domain (format: example.com, no http/www)
 2. Their typical employee email format
 
+Common email formats:
+- Tech companies: firstname@domain or flastname@domain (jsmith)
+- Corporations: firstname.lastname@domain
+- German (GmbH): firstname.lastname@domain
+- Startups: firstname@domain, flastname@domain, or f.lastname@domain
+
 Return ONLY this JSON:
 {\"domain\": \"example.com\", \"format\": \"firstname.lastname\", \"confidence\": 85}
 
-Format options: firstname.lastname, firstname, f.lastname, firstname.l, firstnamelastname, lastname.firstname, lastname, fl, firstname_lastname";
+Format options: firstname.lastname, firstname, f.lastname, flastname, firstname.l, firstnamelastname, lastname.firstname, lastname, fl, firstname_lastname
+
+Set confidence 90-100 if certain, 70-89 if confident, 50-69 if guessing, 30-49 if unsure.";
         
         $data = [
             'contents' => [['parts' => [['text' => $prompt]]]],
@@ -388,6 +563,8 @@ Format options: firstname.lastname, firstname, f.lastname, firstname.l, firstnam
                 return "$lastName.$firstName@$domain";
             case 'fl':
                 return $firstName[0] . $lastName[0] . "@$domain";
+            case 'flastname':
+                return $firstName[0] . "$lastName@$domain";
             case 'firstname_lastname':
                 return "{$firstName}_{$lastName}@$domain";
             default:
@@ -396,11 +573,15 @@ Format options: firstname.lastname, firstname, f.lastname, firstname.l, firstnam
     }
     
     /**
-     * Process all leads
+     * Process all leads with email verification
      */
     public function processLeads($mappings, $excluded = []) {
         $processed = [];
+        $emailsToVerify = [];
+        $emailToIndex = [];
         
+        // First pass: generate all emails
+        $index = 0;
         foreach ($this->companies as $companyName => $leads) {
             if (in_array($companyName, $excluded)) {
                 continue;
@@ -412,17 +593,63 @@ Format options: firstname.lastname, firstname, f.lastname, firstname.l, firstnam
             foreach ($leads as $lead) {
                 $firstName = $this->findFirstName($lead);
                 $lastName = $this->findLastName($lead);
+                $email = $this->generateEmail($firstName, $lastName, $domain, $format);
                 
-                $processed[] = [
+                $processed[$index] = [
                     'firstName' => $firstName,
                     'lastName' => $lastName,
                     'company' => $companyName,
-                    'email' => $this->generateEmail($firstName, $lastName, $domain, $format)
+                    'email' => $email,
+                    'verification_status' => 'not_verified',
+                    'verification_result' => '',
+                    'verification_score' => '',
+                    'is_deliverable' => '',
+                    'is_disposable' => '',
+                    'is_role' => '',
+                    'is_free' => '',
+                    'verified_at' => ''
                 ];
+                
+                if (!empty($email)) {
+                    $emailsToVerify[] = $email;
+                    $emailToIndex[$email] = $index;
+                }
+                
+                $index++;
             }
         }
         
-        return $processed;
+        // Second pass: verify emails if enabled and API is working
+        if (ENABLE_EMAIL_VERIFICATION && !empty($emailsToVerify)) {
+            // Test if MillionVerifier is working before attempting verification
+            $testResult = $this->testMillionVerifierConnection();
+            
+            if ($testResult['working']) {
+                try {
+                    $verificationResults = $this->verifyEmails($emailsToVerify);
+                    
+                    // Update processed data with verification results
+                    foreach ($verificationResults as $email => $verification) {
+                        if (isset($emailToIndex[$email])) {
+                            $idx = $emailToIndex[$email];
+                            $processed[$idx]['verification_status'] = $verification['status'];
+                            $processed[$idx]['verification_result'] = $verification['result'];
+                            $processed[$idx]['verification_score'] = $verification['score'];
+                            $processed[$idx]['is_deliverable'] = $verification['status'] === 'deliverable' ? 'Yes' : ($verification['status'] === 'undeliverable' ? 'No' : 'Unknown');
+                            $processed[$idx]['is_disposable'] = $verification['disposable'] ? 'Yes' : 'No';
+                            $processed[$idx]['is_role'] = $verification['role'] ? 'Yes' : 'No';
+                            $processed[$idx]['is_free'] = $verification['free_email'] ? 'Yes' : 'No';
+                            $processed[$idx]['verified_at'] = $verification['verified_at'] ?? '';
+                        }
+                    }
+                } catch (Exception $e) {
+                    // If verification fails, continue with unverified emails
+                    error_log('Email verification failed: ' . $e->getMessage());
+                }
+            }
+        }
+        
+        return array_values($processed);
     }
     
     /**
@@ -488,6 +715,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'success' => true,
                     'gemini' => $geminiTest,
                     'millionverifier' => $mvTest,
+                    'email_verification_enabled' => ENABLE_EMAIL_VERIFICATION,
+                    'verification_batch_size' => VERIFICATION_BATCH_SIZE,
                     'php_version' => PHP_VERSION,
                     'curl_enabled' => function_exists('curl_init'),
                     'session_id' => session_id(),
@@ -566,12 +795,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 $emailCount = count(array_filter($processed, function($r) { return !empty($r['email']); }));
+                $verifiedCount = count(array_filter($processed, function($r) { 
+                    return !empty($r['email']) && $r['verification_status'] === 'deliverable'; 
+                }));
                 
                 echo json_encode([
                     'success' => true,
                     'preview' => array_slice($processed, 0, 10),
                     'total' => count($processed),
-                    'stats' => ['emails_generated' => $emailCount]
+                    'stats' => [
+                        'emails_generated' => $emailCount,
+                        'emails_verified' => $verifiedCount,
+                        'verification_enabled' => ENABLE_EMAIL_VERIFICATION
+                    ]
                 ]);
                 break;
                 
@@ -608,18 +844,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
         while (ob_get_level()) ob_end_clean();
         
         header('Content-Type: text/csv; charset=UTF-8');
-        header('Content-Disposition: attachment; filename="leads_' . date('Y-m-d') . '.csv"');
+        header('Content-Disposition: attachment; filename="leads_verified_' . date('Y-m-d') . '.csv"');
         echo "\xEF\xBB\xBF"; // BOM for Excel
         
         $output = fopen('php://output', 'w');
-        fputcsv($output, ['First Name', 'Last Name', 'Company', 'Email']);
+        
+        // Enhanced headers with verification data
+        $headers = [
+            'First Name', 
+            'Last Name', 
+            'Company', 
+            'Email',
+            'Verification Status',
+            'Verification Result',
+            'Verification Score',
+            'Deliverable',
+            'Is Disposable',
+            'Is Role Email',
+            'Is Free Email',
+            'Verified At'
+        ];
+        
+        fputcsv($output, $headers);
         
         foreach ($data as $row) {
             fputcsv($output, [
                 $row['firstName'] ?? '',
                 $row['lastName'] ?? '',
                 $row['company'] ?? '',
-                $row['email'] ?? ''
+                $row['email'] ?? '',
+                $row['verification_status'] ?? '',
+                $row['verification_result'] ?? '',
+                $row['verification_score'] ?? '',
+                $row['is_deliverable'] ?? '',
+                $row['is_disposable'] ?? '',
+                $row['is_role'] ?? '',
+                $row['is_free'] ?? '',
+                $row['verified_at'] ?? ''
             ]);
         }
         
@@ -644,6 +905,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     echo "cURL Enabled: " . (function_exists('curl_init') ? 'Yes' : 'No') . "\n";
     echo "Session ID: " . session_id() . "\n";
     echo "Config File: " . (file_exists('config.php') ? 'Found' : 'Not Found') . "\n";
+    echo "Email Verification: " . (ENABLE_EMAIL_VERIFICATION ? 'Enabled' : 'Disabled') . "\n";
+    echo "Batch Size: " . VERIFICATION_BATCH_SIZE . "\n";
     echo "\nDirectories:\n";
     echo "- Upload: " . (is_dir(UPLOAD_DIR) ? 'Exists' : 'Missing') . " - " . (is_writable(UPLOAD_DIR) ? 'Writable' : 'Not Writable') . "\n";
     echo "- Temp: " . (is_dir(TEMP_DIR) ? 'Exists' : 'Missing') . " - " . (is_writable(TEMP_DIR) ? 'Writable' : 'Not Writable') . "\n";
